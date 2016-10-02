@@ -5,7 +5,7 @@ public class Player {
   private HashMap<Integer, GameTree> statesGlobal;
   int myMarks, opMarks;
   long myTime;
-  int tictacDepth = 3;
+  int tictacDepth = 2;
 
   /**
   * Performs a move
@@ -17,6 +17,8 @@ public class Player {
   * @return the next state the board is in after our move
   */
   public GameState play(final GameState gameState, final Deadline deadline) {
+
+    myTime = deadline.timeUntil() - 500000000L;
 
     statesGlobal = new HashMap<Integer, GameTree>();
     Vector<GameState> nextStates = new Vector<GameState>();
@@ -35,31 +37,53 @@ public class Player {
       myMarks = Constants.CELL_O;
       opMarks = Constants.CELL_X;
     }
-    myTime = deadline.timeUntil();
-    /*System.err.println("TIME: " + myTime);*/
+    /*System.err.println("TIME: " + deadline.timeUntil()-myTime);*/
 
 
-    // create make setup gametree
+    // create and setup gametree
     GameTree tictacTree = new GameTree(gameState);
-    deepenGameTree(tictacTree, nextStates, tictacDepth, deadline); // (, , , depth)
-    /*System.err.println("AFTER TREE: " + deadline.timeUntil());*/
+    deepenGameTree(tictacTree, nextStates, 2, deadline); // (, , depth, )
+    /*System.err.println("AFTER TREE: " + deadline.timeUntil()-myTime);*/
     int bestMove = -Integer.MAX_VALUE;
     int bestChild = 0;
     for(int i = 0; i < tictacTree.children.size(); i++) {
-      int tempBest = bestMove(tictacTree.children.get(i), -Integer.MAX_VALUE, Integer.MAX_VALUE, tictacDepth);
+      int tempBest = bestMove(tictacTree.children.get(i), -Integer.MAX_VALUE, Integer.MAX_VALUE, 2);
       if(tempBest > bestMove) {
         bestMove = tempBest;
         bestChild = i;
       }
     }
-    /*System.err.println("AFTER BESTMOVE: " + deadline.timeUntil());*/
+    /*System.err.println("AFTER BESTMOVE: " + deadline.timeUntil()-myTime);*/
     return tictacTree.children.get(bestChild).gameState;
+  }
+
+  private void deepenGameTree(GameTree tictacTreeNode, Vector<GameState> nextStates, int depth, Deadline deadline) {
+
+    if(nextStates.size() == 0 || depth < 1) return;
+
+    for(int i = 0; i < nextStates.size(); i++) {
+      int childHash = nextStates.get(i).hashCode();
+      if(!statesGlobal.containsKey(childHash)) {
+        statesGlobal.put(childHash, new GameTree(nextStates.get(i)));
+      }
+      tictacTreeNode.addChild(statesGlobal.get(childHash));
+    }
+
+    /*if(myTime - deadline.timeUntil() < 500000L) {
+      //System.err.println("CUTTING OFF TREE");
+      depth--;
+    }*/
+
+    for(int i = 0; i < tictacTreeNode.children.size(); i++) {
+      tictacTreeNode.children.get(i).gameState.findPossibleMoves(nextStates);
+      deepenGameTree(tictacTreeNode.children.get(i), nextStates, depth-1, deadline);
+    }
   }
 
   private int bestMove(GameTree tictacTreeNode, int alpha, int beta, int depth) {
     // end recursion
     if(tictacTreeNode.children.size() == 0) return stateGoodness(tictacTreeNode.gameState);
-    if(depth == 0) return stateGoodness(tictacTreeNode.gameState);
+    if(depth < 1) return stateGoodness(tictacTreeNode.gameState);
     /*if(deadline.timeUntil() < 10) {
       System.err.println("best move interrupted by deadline");
       return stateGoodness(tictacTreeNode.gameState);
@@ -83,29 +107,6 @@ public class Player {
       }
     }
     return v;
-  }
-
-  private void deepenGameTree(GameTree tictacTreeNode, Vector<GameState> nextStates, int depth, Deadline dl) {
-
-    if(nextStates.size() == 0 || depth < 1) return;
-    if(statesGlobal.containsKey(tictacTreeNode.gameState.hashCode())) {
-      tictacTreeNode = statesGlobal.get(tictacTreeNode.gameState.hashCode());
-      return;
-    } else {
-      statesGlobal.put(tictacTreeNode.gameState.hashCode(), tictacTreeNode);
-    }
-
-    for(int i = 0; i < nextStates.size(); i++) {
-      GameTree childnode = new GameTree(nextStates.get(i));
-      tictacTreeNode.addChild(childnode);
-    }
-
-    if(dl.timeUntil() < 9580000000L) return;
-
-    for(int i = 0; i < tictacTreeNode.children.size(); i++) {
-      tictacTreeNode.children.get(i).gameState.findPossibleMoves(nextStates);
-      deepenGameTree(tictacTreeNode.children.get(i), nextStates, depth-1, dl);
-    }
   }
 
   private int stateGoodness(GameState gState) {
@@ -153,14 +154,14 @@ public class Player {
       for(int c = 0; c < gState.BOARD_SIZE; c++) {
         int colPoints = 0;
         for(int r = 0; r < gState.BOARD_SIZE; r++) {
-          if(gState.at(r, c, l) == myMarks) {
+          if(gState.at(c, r, l) == myMarks) {
             if(colPoints < 0) {
               colPoints = 0;
               break;
             } else {
               colPoints = (colPoints+1) * 2;
             }
-          } else if(gState.at(r, c, l) == opMarks) {
+          } else if(gState.at(c, r, l) == opMarks) {
             if(colPoints > 0) {
               colPoints = 0;
               break;
@@ -281,7 +282,7 @@ public class Player {
       }
       goodness += diag1pts + diag2pts;
 
-      // points laying diagonals
+      // points lying diagonals
       diag1pts = 0;
       diag2pts = 0;
       diag1 = true;
@@ -321,6 +322,7 @@ public class Player {
         }
         if(!(diag1 || diag2)) break;
       }
+      goodness += diag1pts + diag2pts;
     }
 
     // point for cube main diagonals
