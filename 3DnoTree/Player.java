@@ -2,10 +2,10 @@ import java.util.*;
 
 public class Player {
 
-  private HashMap<Integer, GameTree> statesGlobal;
   int myMarks, opMarks;
   long myTime;
-  int tictacDepth = 3;
+  int tictacDepth = 5;
+  boolean winNextMove = false;
 
   /**
   * Performs a move
@@ -19,11 +19,10 @@ public class Player {
   public GameState play(final GameState gameState, final Deadline deadline) {
 
     myTime = deadline.timeUntil() - 500000000L;
-    statesGlobal = new HashMap<Integer, GameTree>();
-    Vector<GameState> nextStates = new Vector<GameState>();
-    gameState.findPossibleMoves(nextStates);
+    LinkedList<Integer> nextMoves = new LinkedList<Integer>(); // free cells
+    findPossibleMoves(gameState, nextMoves); // fill list with free cells from gameState
 
-    if (nextStates.size() == 0) {
+    if (nextMoves.size() == 0) {
       // Must play "pass" move if there are no other moves possible.
       return new GameState(gameState, new Move());
     }
@@ -36,74 +35,77 @@ public class Player {
       myMarks = Constants.CELL_O;
       opMarks = Constants.CELL_X;
     }
-    /*System.err.println("TIME: " + myTime);*/
 
-
-    // create make setup gametree
-    GameTree tictacTree = new GameTree(gameState);
-    deepenGameTree(tictacTree, nextStates, tictacDepth, deadline); // (, , , depth)
-    /*System.err.println("AFTER TREE: " + deadline.timeUntil());*/
     int bestMove = -Integer.MAX_VALUE;
     int bestChild = 0;
-    for(int i = 0; i < tictacTree.children.size(); i++) {
-      int tempBest = bestMove(tictacTree.children.get(i), -Integer.MAX_VALUE, Integer.MAX_VALUE, tictacDepth);
+    int alpha = -Integer.MAX_VALUE;
+    int beta = Integer.MAX_VALUE;
+    for(int i = 0; i < nextMoves.size(); i++) {
+      int tmp = nextMoves.remove(i); // free cells possible to mark
+      GameState nextState = new GameState(gameState, new Move(tmp, myMarks)); // set my mark on free cell
+      int tempBest = bestMove(nextState, nextMoves, alpha, beta, 0, opMarks); // evaluate the goodness of this move
+      nextMoves.add(i, tmp); // put back free cell for next move
       if(tempBest > bestMove) {
         bestMove = tempBest;
-        bestChild = i;
+        bestChild = nextMoves.get(i);
       }
     }
-    /*System.err.println("AFTER BESTMOVE: " + deadline.timeUntil());*/
-    return tictacTree.children.get(bestChild).gameState;
+    /*System.err.println("bestMove: " + bestMove + " AT cell: " + bestChild);*/
+    if(winNextMove) {
+      return new GameState(gameState, new Move(bestChild, myMarks, 1));
+    }
+    /*System.err.println("AFTER BESTMOVE: " + deadline.timeUntil()-myTime);*/
+    return new GameState(gameState, new Move(bestChild, myMarks));
   }
 
-  private int bestMove(GameTree tictacTreeNode, int alpha, int beta, int depth) {
+  private void findPossibleMoves(GameState gameState, LinkedList<Integer> nextMoves) {
+    /*if(gameState.isEOG()) return;*/
+
+    for(int i = 0; i < gameState.CELL_COUNT; i++) {
+      if(gameState.at(i) == 0) nextMoves.add(i);
+    }
+  }
+
+  private int bestMove(GameState gameState, LinkedList<Integer> nextMoves, int alpha, int beta, int depth, int player) {
     // end recursion
-    if(tictacTreeNode.children.size() == 0) return stateGoodness(tictacTreeNode.gameState);
-    if(depth == 0) return stateGoodness(tictacTreeNode.gameState);
-    /*if(deadline.timeUntil() < 10) {
-      System.err.println("best move interrupted by deadline");
-      return stateGoodness(tictacTreeNode.gameState);
-    }*/
+    int goodness = stateGoodness(gameState);
+    if(goodness == Integer.MAX_VALUE && depth%2 == 0) {
+      if(depth == 0) winNextMove = true;
+      return goodness;
+    }
+    if(goodness == -Integer.MAX_VALUE && depth%2 == 1) return goodness;
+    if(depth == tictacDepth-1) return goodness;
+
     int v;
-    if((tictacDepth-depth)%2 == 0) {
+    if(player == myMarks) {
       v = -Integer.MAX_VALUE;
-      for(int i = 0; i < tictacTreeNode.children.size(); i++) {
-        int tempv = bestMove(tictacTreeNode.children.get(i), alpha, beta, depth-1);
+      for(int i = 0; i < nextMoves.size(); i++) {
+        int tmp = nextMoves.remove(i);
+        GameState nextState = new GameState(gameState, new Move(tmp, myMarks));
+        int tempv = bestMove(gameState, nextMoves, alpha, beta, depth+1, opMarks);
+        nextMoves.add(i, tmp);
         if(tempv > v) v = tempv;
         if(v > alpha) alpha = v;
         if(beta <= alpha) break;
       }
     } else {
       v = Integer.MAX_VALUE;
-      for(int i = 0; i < tictacTreeNode.children.size(); i++) {
-        int tempv = bestMove(tictacTreeNode.children.get(i), alpha, beta, depth-1);
+      for(int i = 0; i < nextMoves.size(); i++) {
+        int tmp = nextMoves.remove(i);
+        GameState nextState = new GameState(gameState, new Move(tmp, opMarks));
+        int tempv = bestMove(gameState, nextMoves, alpha, beta, depth+1, myMarks);
+        nextMoves.add(i, tmp);
         if(tempv < v) v = tempv;
-        if(v < alpha) beta = v;
+        if(v < beta) beta = v;
         if(beta <= alpha) break;
       }
     }
     return v;
   }
 
-  private void deepenGameTree(GameTree tictacTreeNode, Vector<GameState> nextStates, int depth, Deadline dl) {
-    if(nextStates.size() == 0 || depth < 1 || dl.timeUntil() < myTime+10000) return;
-
-    for(int i = 0; i < nextStates.size(); i++) {
-      if(!statesGlobal.containsKey(nextStates.get(i).hashCode())) {
-        statesGlobal.put(nextStates.get(i).hashCode(), new GameTree(nextStates.get(i)));
-      }
-      tictacTreeNode.addChild(statesGlobal.get(nextStates.get(i).hashCode()));
-    }
-
-    for(int i = 0; i < tictacTreeNode.children.size(); i++) {
-      tictacTreeNode.children.get(i).gameState.findPossibleMoves(nextStates);
-      deepenGameTree(tictacTreeNode.children.get(i), nextStates, depth-1, dl);
-    }
-  }
-
   private int stateGoodness(GameState gState) {
 
-    if(gState.isXWin()) {
+    /*if(gState.isXWin()) {
       if(myMarks == Constants.CELL_X) return Integer.MAX_VALUE;
       if(myMarks == Constants.CELL_O) return -Integer.MAX_VALUE;
     }
@@ -113,7 +115,7 @@ public class Player {
     }
     if(gState.isEOG()) {
       return 0;
-    }
+    }*/
 
     // evaluate state
     int goodness = 0;
@@ -139,6 +141,8 @@ public class Player {
             }
           }
         }
+        if(rowPoints == 30) return Integer.MAX_VALUE;
+        else if(rowPoints == -30) return -Integer.MAX_VALUE;
         goodness += rowPoints;
       }
       // points for columns
@@ -161,6 +165,8 @@ public class Player {
             }
           }
         }
+        if(colPoints == 30) return Integer.MAX_VALUE;
+        else if(colPoints == -30) return -Integer.MAX_VALUE;
         goodness += colPoints;
       }
       // points for diagonals of each layer
@@ -203,6 +209,10 @@ public class Player {
         }
         if(!(diag1 || diag2)) break;
       }
+      if(diag1pts == 30) return Integer.MAX_VALUE;
+      else if(diag1pts == -30) return -Integer.MAX_VALUE;
+      if(diag2pts == 30) return Integer.MAX_VALUE;
+      else if(diag2pts == -30) return -Integer.MAX_VALUE;
 
       goodness += diag1pts + diag2pts;
     }
@@ -229,6 +239,8 @@ public class Player {
             }
           }
         }
+        if(rowPoints == 30) return Integer.MAX_VALUE;
+        else if(rowPoints == -30) return -Integer.MAX_VALUE;
         goodness += rowPoints;
       }
 
@@ -272,6 +284,10 @@ public class Player {
         }
         if(!(diag1 || diag2)) break;
       }
+      if(diag1pts == 30) return Integer.MAX_VALUE;
+      else if(diag1pts == -30) return -Integer.MAX_VALUE;
+      if(diag2pts == 30) return Integer.MAX_VALUE;
+      else if(diag2pts == -30) return -Integer.MAX_VALUE;
       goodness += diag1pts + diag2pts;
 
       // points lying diagonals
@@ -314,6 +330,10 @@ public class Player {
         }
         if(!(diag1 || diag2)) break;
       }
+      if(diag1pts == 30) return Integer.MAX_VALUE;
+      else if(diag1pts == -30) return -Integer.MAX_VALUE;
+      if(diag2pts == 30) return Integer.MAX_VALUE;
+      else if(diag2pts == -30) return -Integer.MAX_VALUE;
       goodness += diag1pts + diag2pts;
     }
 
@@ -393,6 +413,14 @@ public class Player {
       }
       if(!(diag1 || diag2 || diag3 || diag4)) break;
     }
+    if(diag1pts == 30) return Integer.MAX_VALUE;
+    else if(diag1pts == -30) return -Integer.MAX_VALUE;
+    if(diag2pts == 30) return Integer.MAX_VALUE;
+    else if(diag2pts == -30) return -Integer.MAX_VALUE;
+    if(diag3pts == 30) return Integer.MAX_VALUE;
+    else if(diag3pts == -30) return -Integer.MAX_VALUE;
+    if(diag4pts == 30) return Integer.MAX_VALUE;
+    else if(diag4pts == -30) return -Integer.MAX_VALUE;
 
     goodness += diag1pts + diag2pts + diag3pts + diag4pts;
     return goodness;

@@ -15,11 +15,6 @@ public class GameTree {
     this.children = new LinkedList<GameTree>();
   }
 
-  public GameTree(GameState gState) {
-    this.gameState = gState;
-    this.children = new LinkedList<GameTree>();
-  }
-
   public void addChild(GameTree gTreeNode) {
     children.add(gTreeNode);
   }
