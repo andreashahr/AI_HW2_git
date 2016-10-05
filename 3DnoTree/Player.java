@@ -4,8 +4,8 @@ public class Player {
 
   int myMarks, opMarks;
   long myTime;
-  int tictacDepth = 5;
-  boolean winNextMove = false;
+  int tictacDepth = 4;
+  boolean winNextMove;
 
   /**
   * Performs a move
@@ -18,16 +18,14 @@ public class Player {
   */
   public GameState play(final GameState gameState, final Deadline deadline) {
 
-    myTime = deadline.timeUntil() - 500000000L;
+    winNextMove = false;
     LinkedList<Integer> nextMoves = new LinkedList<Integer>(); // free cells
     findPossibleMoves(gameState, nextMoves); // fill list with free cells from gameState
-
     if (nextMoves.size() == 0) {
       // Must play "pass" move if there are no other moves possible.
       return new GameState(gameState, new Move());
     }
-
-    // determine global player vars from gamestate
+    // determine global player vars
     if(gameState.getNextPlayer() == Constants.CELL_O) {
       myMarks = Constants.CELL_X;
       opMarks = Constants.CELL_O;
@@ -35,54 +33,53 @@ public class Player {
       myMarks = Constants.CELL_O;
       opMarks = Constants.CELL_X;
     }
-
+    // determine best move
     int bestMove = -Integer.MAX_VALUE;
-    int bestChild = 0;
-    int alpha = -Integer.MAX_VALUE;
-    int beta = Integer.MAX_VALUE;
+    int bestChild = -1;
+    Integer alpha = new Integer(-Integer.MAX_VALUE); // best stateGoodness @ tictacDepth
+    Integer beta = new Integer(Integer.MAX_VALUE); // worst (best for opponent)
     for(int i = 0; i < nextMoves.size(); i++) {
-      int tmp = nextMoves.remove(i); // free cells possible to mark
+      int tmp = nextMoves.removeFirst(); // save value of free cell
       GameState nextState = new GameState(gameState, new Move(tmp, myMarks)); // set my mark on free cell
-      int tempBest = bestMove(nextState, nextMoves, alpha, beta, 0, opMarks); // evaluate the goodness of this move
-      nextMoves.add(i, tmp); // put back free cell for next move
-      if(tempBest > bestMove) {
+      int tempBest = bestMove(nextState, nextMoves, alpha, beta, 0, opMarks); // traverse tree and return move goodness
+      nextMoves.addLast(tmp); // put back free cell
+      if(tempBest >= bestMove) {
         bestMove = tempBest;
-        bestChild = nextMoves.get(i);
+        bestChild = tmp;
       }
     }
-    /*System.err.println("bestMove: " + bestMove + " AT cell: " + bestChild);*/
+    // do win move (for terminal run to finish correctly)
     if(winNextMove) {
       return new GameState(gameState, new Move(bestChild, myMarks, 1));
     }
-    /*System.err.println("AFTER BESTMOVE: " + deadline.timeUntil()-myTime);*/
     return new GameState(gameState, new Move(bestChild, myMarks));
   }
 
   private void findPossibleMoves(GameState gameState, LinkedList<Integer> nextMoves) {
-    /*if(gameState.isEOG()) return;*/
 
     for(int i = 0; i < gameState.CELL_COUNT; i++) {
       if(gameState.at(i) == 0) nextMoves.add(i);
     }
   }
 
-  private int bestMove(GameState gameState, LinkedList<Integer> nextMoves, int alpha, int beta, int depth, int player) {
+  private int bestMove(GameState gameState, LinkedList<Integer> nextMoves, Integer alpha, Integer beta, int depth, int player) {
     // end recursion
     int goodness = stateGoodness(gameState);
-    if(goodness == Integer.MAX_VALUE && depth%2 == 0) {
-      if(depth == 0) winNextMove = true;
+    if(goodness == Integer.MAX_VALUE) {
+      if(depth == 0) {winNextMove = true;}
       return goodness;
     }
-    if(goodness == -Integer.MAX_VALUE && depth%2 == 1) return goodness;
+    if(goodness == -Integer.MAX_VALUE) return goodness;
     if(depth == tictacDepth-1) return goodness;
 
+    // traverse subtree
     int v;
     if(player == myMarks) {
       v = -Integer.MAX_VALUE;
       for(int i = 0; i < nextMoves.size(); i++) {
         int tmp = nextMoves.remove(i);
         GameState nextState = new GameState(gameState, new Move(tmp, myMarks));
-        int tempv = bestMove(gameState, nextMoves, alpha, beta, depth+1, opMarks);
+        int tempv = bestMove(nextState, nextMoves, alpha, beta, depth+1, opMarks);
         nextMoves.add(i, tmp);
         if(tempv > v) v = tempv;
         if(v > alpha) alpha = v;
@@ -93,7 +90,7 @@ public class Player {
       for(int i = 0; i < nextMoves.size(); i++) {
         int tmp = nextMoves.remove(i);
         GameState nextState = new GameState(gameState, new Move(tmp, opMarks));
-        int tempv = bestMove(gameState, nextMoves, alpha, beta, depth+1, myMarks);
+        int tempv = bestMove(nextState, nextMoves, alpha, beta, depth+1, myMarks);
         nextMoves.add(i, tmp);
         if(tempv < v) v = tempv;
         if(v < beta) beta = v;
@@ -105,19 +102,6 @@ public class Player {
 
   private int stateGoodness(GameState gState) {
 
-    /*if(gState.isXWin()) {
-      if(myMarks == Constants.CELL_X) return Integer.MAX_VALUE;
-      if(myMarks == Constants.CELL_O) return -Integer.MAX_VALUE;
-    }
-    if(gState.isOWin()) {
-      if(myMarks == Constants.CELL_X) return -Integer.MAX_VALUE;
-      if(myMarks == Constants.CELL_O) return Integer.MAX_VALUE;
-    }
-    if(gState.isEOG()) {
-      return 0;
-    }*/
-
-    // evaluate state
     int goodness = 0;
     // colpoints, rowponts and diags for each layer
     for(int l = 0; l < gState.BOARD_SIZE; l++) {
@@ -130,19 +114,19 @@ public class Player {
               rowPoints = 0;
               break;
             } else {
-              rowPoints = (rowPoints+1) * 2;
+              rowPoints = rowPoints*10+1;
             }
           } else if(gState.at(r, c, l) == opMarks) {
             if(rowPoints > 0) {
               rowPoints = 0;
               break;
             } else {
-              rowPoints = (rowPoints-1) * 2;
+              rowPoints = rowPoints*10-1;
             }
           }
         }
-        if(rowPoints == 30) return Integer.MAX_VALUE;
-        else if(rowPoints == -30) return -Integer.MAX_VALUE;
+        if(rowPoints == 1111) return Integer.MAX_VALUE;
+        else if(rowPoints == -1111) return -Integer.MAX_VALUE;
         goodness += rowPoints;
       }
       // points for columns
@@ -154,19 +138,19 @@ public class Player {
               colPoints = 0;
               break;
             } else {
-              colPoints = (colPoints+1) * 2;
+              colPoints = colPoints*10+1 ;
             }
           } else if(gState.at(r, c, l) == opMarks) {
             if(colPoints > 0) {
               colPoints = 0;
               break;
             } else {
-              colPoints = (colPoints-1) * 2;
+              colPoints = colPoints*10-1 ;
             }
           }
         }
-        if(colPoints == 30) return Integer.MAX_VALUE;
-        else if(colPoints == -30) return -Integer.MAX_VALUE;
+        if(colPoints == 1111) return Integer.MAX_VALUE;
+        else if(colPoints == -1111) return -Integer.MAX_VALUE;
         goodness += colPoints;
       }
       // points for diagonals of each layer
@@ -181,14 +165,14 @@ public class Player {
             diag1pts = 0;
             diag1 = false;
           } else {
-            diag1pts = (diag1pts+1) * 2;
+            diag1pts = diag1pts*10+1;
           }
         } else if(gState.at(i, i, l) == opMarks && diag1) {
           if(diag1pts > 0) {
             diag1pts = 0;
             diag1 = false;
           } else {
-            diag1pts = (diag1pts-1) * 2;
+            diag1pts = diag1pts*10-1;
           }
         }
         // diagonal 2
@@ -197,22 +181,22 @@ public class Player {
             diag2pts = 0;
             diag2 = false;
           } else {
-            diag2pts = (diag2pts+1) * 2;
+            diag2pts = diag2pts*10+1;
           }
         } else if(gState.at(i, gState.BOARD_SIZE-1-i, l) == opMarks && diag2) {
           if(diag2pts > 0) {
             diag2pts = 0;
             diag2 = false;
           } else {
-            diag2pts = (diag2pts-1) * 2;
+            diag2pts = diag2pts*10-1;
           }
         }
         if(!(diag1 || diag2)) break;
       }
-      if(diag1pts == 30) return Integer.MAX_VALUE;
-      else if(diag1pts == -30) return -Integer.MAX_VALUE;
-      if(diag2pts == 30) return Integer.MAX_VALUE;
-      else if(diag2pts == -30) return -Integer.MAX_VALUE;
+      if(diag1pts == 1111) return Integer.MAX_VALUE;
+      else if(diag1pts == -1111) return -Integer.MAX_VALUE;
+      if(diag2pts == 1111) return Integer.MAX_VALUE;
+      else if(diag2pts == -1111) return -Integer.MAX_VALUE;
 
       goodness += diag1pts + diag2pts;
     }
@@ -228,19 +212,19 @@ public class Player {
               rowPoints = 0;
               break;
             } else {
-              rowPoints = (rowPoints+1) * 2;
+              rowPoints = rowPoints*10+1;
             }
           } else if(gState.at(r, c, l) == opMarks) {
             if(rowPoints > 0) {
               rowPoints = 0;
               break;
             } else {
-              rowPoints = (rowPoints-1) * 2;
+              rowPoints = rowPoints*10-1;
             }
           }
         }
-        if(rowPoints == 30) return Integer.MAX_VALUE;
-        else if(rowPoints == -30) return -Integer.MAX_VALUE;
+        if(rowPoints == 1111) return Integer.MAX_VALUE;
+        else if(rowPoints == -1111) return -Integer.MAX_VALUE;
         goodness += rowPoints;
       }
 
@@ -256,14 +240,14 @@ public class Player {
             diag1pts = 0;
             diag1 = false;
           } else {
-            diag1pts = (diag1pts+1) * 2;
+            diag1pts = diag1pts*10+1;
           }
         } else if(gState.at(r, i, i) == opMarks && diag1) {
           if(diag1pts > 0) {
             diag1pts = 0;
             diag1 = false;
           } else {
-            diag1pts = (diag1pts-1) * 2;
+            diag1pts = diag1pts*10-1;
           }
         }
         // diagonal 2
@@ -272,22 +256,22 @@ public class Player {
             diag2pts = 0;
             diag2 = false;
           } else {
-            diag2pts = (diag2pts+1) * 2;
+            diag2pts = diag2pts*10+1;
           }
         } else if(gState.at(r, i, gState.BOARD_SIZE-1-i) == opMarks && diag2) {
           if(diag2pts > 0) {
             diag2pts = 0;
             diag2 = false;
           } else {
-            diag2pts = (diag2pts-1) * 2;
+            diag2pts = diag2pts*10-1;
           }
         }
         if(!(diag1 || diag2)) break;
       }
-      if(diag1pts == 30) return Integer.MAX_VALUE;
-      else if(diag1pts == -30) return -Integer.MAX_VALUE;
-      if(diag2pts == 30) return Integer.MAX_VALUE;
-      else if(diag2pts == -30) return -Integer.MAX_VALUE;
+      if(diag1pts == 1111) return Integer.MAX_VALUE;
+      else if(diag1pts == -1111) return -Integer.MAX_VALUE;
+      if(diag2pts == 1111) return Integer.MAX_VALUE;
+      else if(diag2pts == -1111) return -Integer.MAX_VALUE;
       goodness += diag1pts + diag2pts;
 
       // points lying diagonals
@@ -302,14 +286,14 @@ public class Player {
             diag1pts = 0;
             diag1 = false;
           } else {
-            diag1pts = (diag1pts+1) * 2;
+            diag1pts = diag1pts*10+1;
           }
         } else if(gState.at(i, r, i) == opMarks && diag1) {
           if(diag1pts > 0) {
             diag1pts = 0;
             diag1 = false;
           } else {
-            diag1pts = (diag1pts-1) * 2;
+            diag1pts = diag1pts*10-1;
           }
         }
         // diagonal 2
@@ -318,22 +302,22 @@ public class Player {
             diag2pts = 0;
             diag2 = false;
           } else {
-            diag2pts = (diag2pts+1) * 2;
+            diag2pts = diag2pts*10+1;
           }
         } else if(gState.at(i, r, gState.BOARD_SIZE-1-i) == opMarks && diag2) {
           if(diag2pts > 0) {
             diag2pts = 0;
             diag2 = false;
           } else {
-            diag2pts = (diag2pts-1) * 2;
+            diag2pts = diag2pts*10-1;
           }
         }
         if(!(diag1 || diag2)) break;
       }
-      if(diag1pts == 30) return Integer.MAX_VALUE;
-      else if(diag1pts == -30) return -Integer.MAX_VALUE;
-      if(diag2pts == 30) return Integer.MAX_VALUE;
-      else if(diag2pts == -30) return -Integer.MAX_VALUE;
+      if(diag1pts == 1111) return Integer.MAX_VALUE;
+      else if(diag1pts == -1111) return -Integer.MAX_VALUE;
+      if(diag2pts == 1111) return Integer.MAX_VALUE;
+      else if(diag2pts == -1111) return -Integer.MAX_VALUE;
       goodness += diag1pts + diag2pts;
     }
 
@@ -353,14 +337,14 @@ public class Player {
           diag1pts = 0;
           diag1 = false;
         } else {
-          diag1pts = (diag1pts+1) * 2;
+          diag1pts = diag1pts*10+1;
         }
       } else if(gState.at(i, i, i) == opMarks && diag1) {
         if(diag1pts > 0) {
           diag1pts = 0;
           diag1 = false;
         } else {
-          diag1pts = (diag1pts-1) * 2;
+          diag1pts = diag1pts*10-1;
         }
       }
       // diagonal 2
@@ -369,14 +353,14 @@ public class Player {
           diag2pts = 0;
           diag2 = false;
         } else {
-          diag2pts = (diag2pts+1) * 2;
+          diag2pts = diag2pts*10+1;
         }
       } else if(gState.at(gState.BOARD_SIZE-1-i, i, i) == opMarks && diag2) {
         if(diag2pts > 0) {
           diag2pts = 0;
           diag2 = false;
         } else {
-          diag2pts = (diag2pts-1) * 2;
+          diag2pts = diag2pts*10-1;
         }
       }
       // diagonal 3
@@ -385,14 +369,14 @@ public class Player {
           diag3pts = 0;
           diag3 = false;
         } else {
-          diag3pts = (diag3pts+1) * 2;
+          diag3pts = diag3pts*10+1;
         }
       } else if(gState.at(i, gState.BOARD_SIZE-1-i, i) == opMarks && diag3) {
         if(diag3pts > 0) {
           diag3pts = 0;
           diag3 = false;
         } else {
-          diag3pts = (diag3pts-1) * 2;
+          diag3pts = diag3pts*10-1;
         }
       }
       // diagonal 4
@@ -401,26 +385,26 @@ public class Player {
           diag4pts = 0;
           diag4 = false;
         } else {
-          diag4pts = (diag4pts+1) * 2;
+          diag4pts = diag4pts*10+1;
         }
       } else if(gState.at(gState.BOARD_SIZE-1-i, gState.BOARD_SIZE-1-i, i) == opMarks && diag4) {
         if(diag4pts > 0) {
           diag4pts = 0;
           diag4 = false;
         } else {
-          diag4pts = (diag4pts-1) * 2;
+          diag4pts = diag4pts*10-1;
         }
       }
       if(!(diag1 || diag2 || diag3 || diag4)) break;
     }
-    if(diag1pts == 30) return Integer.MAX_VALUE;
-    else if(diag1pts == -30) return -Integer.MAX_VALUE;
-    if(diag2pts == 30) return Integer.MAX_VALUE;
-    else if(diag2pts == -30) return -Integer.MAX_VALUE;
-    if(diag3pts == 30) return Integer.MAX_VALUE;
-    else if(diag3pts == -30) return -Integer.MAX_VALUE;
-    if(diag4pts == 30) return Integer.MAX_VALUE;
-    else if(diag4pts == -30) return -Integer.MAX_VALUE;
+    if(diag1pts == 1111) return Integer.MAX_VALUE;
+    else if(diag1pts == -1111) return -Integer.MAX_VALUE;
+    if(diag2pts == 1111) return Integer.MAX_VALUE;
+    else if(diag2pts == -1111) return -Integer.MAX_VALUE;
+    if(diag3pts == 1111) return Integer.MAX_VALUE;
+    else if(diag3pts == -1111) return -Integer.MAX_VALUE;
+    if(diag4pts == 1111) return Integer.MAX_VALUE;
+    else if(diag4pts == -1111) return -Integer.MAX_VALUE;
 
     goodness += diag1pts + diag2pts + diag3pts + diag4pts;
     return goodness;
